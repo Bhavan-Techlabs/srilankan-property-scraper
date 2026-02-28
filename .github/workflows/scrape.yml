@@ -1,0 +1,38 @@
+name: Scrape ikman.lk
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write credentials
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+      - name: Write config
+        run: echo '${{ secrets.CONFIG_YAML }}' > config.yaml
+
+      - name: Run scraper
+        run: python main.py
+
+      - name: Cleanup secrets
+        if: always()
+        run: |
+          rm -f credentials.json config.yaml
