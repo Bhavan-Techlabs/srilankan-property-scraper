@@ -106,7 +106,8 @@ def _compact_rows(worksheet):
         if row_count <= 1:
             return
 
-        worksheet.format(f"A2:O{row_count}", {"wrapStrategy": "CLIP"})
+        end_col = chr(ord("A") + len(COLUMNS) - 1)
+        worksheet.format(f"A2:{end_col}{row_count}", {"wrapStrategy": "CLIP"})
 
         worksheet.spreadsheet.batch_update({"requests": [{
             "updateDimensionProperties": {
@@ -132,6 +133,7 @@ def _format_header(worksheet):
             "textFormat": {"bold": True},
             "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9},
         })
-        worksheet.format("A:O", {"wrapStrategy": "CLIP"})
+        end_col = chr(ord("A") + len(COLUMNS) - 1)
+        worksheet.format(f"A:{end_col}", {"wrapStrategy": "CLIP"})
     except Exception as e:
         logger.debug("Could not format worksheet (non-critical): %s", e)

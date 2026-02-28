@@ -38,7 +38,6 @@ Google Sheets → One tab per location, sorted by date
 | Land Size | Land size in perches |
 | House Size | House size in sqft |
 | Price | Display price (e.g., Rs 35,000,000) |
-| Total | Numeric price for sorting/filtering |
 | Address | Property address |
 | Description | Full ad description (clipped in sheet, visible on click) |
 | URL | Link to the ad on ikman.lk |

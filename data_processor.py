@@ -12,7 +12,6 @@ COLUMNS = [
     "Land Size",
     "House Size",
     "Price",
-    "Total",
     "Address",
     "Description",
     "URL",
@@ -22,13 +21,6 @@ COLUMNS = [
     "Notes",
 ]
 
-
-def normalize_price(price_str):
-    """Convert 'Rs 42,000,000' to integer 42000000. Returns None if unparseable."""
-    if not price_str:
-        return None
-    digits = re.sub(r"[^\d]", "", str(price_str))
-    return int(digits) if digits else None
 
 
 def normalize_land_size(land_size_str):
@@ -75,8 +67,6 @@ def build_row(listing, details, location_name):
     Combine listing summary and ad detail data into a single flat dict
     matching the COLUMNS schema.
     """
-    total = listing.get("price_numeric") or normalize_price(listing.get("price_raw", ""))
-
     return {
         "Title": listing.get("title", ""),
         "Location": location_name,
@@ -85,7 +75,6 @@ def build_row(listing, details, location_name):
         "Land Size": normalize_land_size(details.get("land_size", "")),
         "House Size": details.get("house_size", ""),
         "Price": listing.get("price_raw", ""),
-        "Total": total if total else "",
         "Address": details.get("address", ""),
         "Description": details.get("description", ""),
         "URL": listing.get("ad_url", ""),
