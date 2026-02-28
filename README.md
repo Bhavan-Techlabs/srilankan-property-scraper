@@ -205,4 +205,4 @@ This project is for educational and personal use only. Please respect ikman.lk's
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
