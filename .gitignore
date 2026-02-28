@@ -1,0 +1,30 @@
+# Credentials & secrets
+credentials.json
+*.json.bak
+
+# Config with real values
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ignore cursor AI rules
+.cursor/rules/codacy.mdc

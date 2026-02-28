@@ -1,0 +1,28 @@
+# Google Spreadsheet ID (from the URL: /spreadsheets/d/SPREADSHEET_ID/edit)
+spreadsheet_id: "YOUR_SPREADSHEET_ID_HERE"
+
+# Path to Google service account credentials JSON
+credentials_path: "credentials.json"
+
+# URLs to scrape (each gets its own sheet tab named after the location)
+urls:
+  - "https://ikman.lk/en/ads/maharagama/houses-for-sale"
+  - "https://ikman.lk/en/ads/boralesgamuwa/houses-for-sale"
+
+# Global price filter (applied when the URL doesn't already have price params)
+# Set to null to disable
+price_filter:
+  min: 15000000    # Rs 15 million
+  max: 80000000    # Rs 80 million
+
+# Duplicate detection: minimum description similarity ratio (0.0 - 1.0)
+similarity_threshold: 0.9
+
+# Delay between HTTP requests in seconds (be respectful to the server)
+request_delay: 1.5
+
+# Only scrape ads posted within the last N days (older ads are skipped)
+max_age_days: 14
+
+# Maximum pages to scrape per location (safety limit)
+max_pages: 20
