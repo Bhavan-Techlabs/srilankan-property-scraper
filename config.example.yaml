@@ -1,5 +1,5 @@
 # Google Spreadsheet ID (from the URL: /spreadsheets/d/SPREADSHEET_ID/edit)
-spreadsheet_id: "YOUR_SPREADSHEET_ID_HERE"
+spreadsheet_id: "1r-G0X1x3BwZfnFDG_R2KwOdnbNrs8nkL4FK-60_MYVQ"
 
 # Path to Google service account credentials JSON
 credentials_path: "credentials.json"
@@ -8,12 +8,13 @@ credentials_path: "credentials.json"
 urls:
   - "https://ikman.lk/en/ads/maharagama/houses-for-sale"
   - "https://ikman.lk/en/ads/boralesgamuwa/houses-for-sale"
+  - "https://ikman.lk/en/ads/ja-ela/houses-for-sale"
 
 # Global price filter (applied when the URL doesn't already have price params)
 # Set to null to disable
 price_filter:
-  min: 15000000    # Rs 15 million
-  max: 80000000    # Rs 80 million
+  min: 5000000    # Rs 5 million
+  max: 20000000    # Rs 20 million
 
 # Duplicate detection: minimum description similarity ratio (0.0 - 1.0)
 similarity_threshold: 0.9
