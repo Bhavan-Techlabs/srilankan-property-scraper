@@ -40,10 +40,17 @@ def extract_location_name(url):
         raw = re.sub(r"^[A-Z][a-z]+ ", "", raw)
         return raw
 
-    # query param location=
+    # /sale/index.php?searchbox=Piliyandala  (prefer searchbox — clean city name)
     qs = parse_qs(parsed.query)
+    if "searchbox" in qs:
+        return qs["searchbox"][0].replace("+", " ").replace("_", " ").title()
+
+    # fallback: location= param, strip region prefix and hash suffix
     if "location" in qs:
-        return qs["location"][0].replace("_", " ").title()
+        raw = qs["location"][0].replace("_", " ").replace("+", " ").title()
+        raw = re.sub(r"^[A-Z][a-z]+ ", "", raw)  # strip "Western ", "Central " etc
+        raw = re.sub(r"\s+[A-Z0-9]{8,}.*$", "", raw)  # strip hex hash suffixes
+        return raw.strip()
 
     return "LankaPropertyWeb"
 
@@ -136,13 +143,61 @@ def _parse_posted_date(text):
 
 
 def _parse_listing_cards(html, price_min, price_max):
-    """Parse listing cards from a search results page."""
+    """Parse listing cards from a search results page.
+
+    Handles two layouts:
+    - article.listing-item cards (index.php search results)
+    - legacy a[href*=property_details] cards (forsale-*.html pages)
+    """
     soup = BeautifulSoup(html, "lxml")
     ads = []
+    seen_urls = set()
 
+    # Modern layout: article.listing-item
+    for article in soup.find_all("article", class_="listing-item"):
+        a_header = article.find("a", class_="listing-header", href=re.compile(r"property_details"))
+        if not a_header:
+            continue
+        href = a_header.get("href", "")
+        ad_url = urljoin(BASE_URL, href)
+        if ad_url in seen_urls:
+            continue
+        seen_urls.add(ad_url)
+
+        title_tag = article.find("h4", class_="listing-title") or article.find(["h4", "h5"])
+        title = title_tag.get_text(strip=True) if title_tag else ""
+
+        price_tag = article.find("div", class_="listing-price")
+        price_text = price_tag.get_text(strip=True) if price_tag else ""
+        numeric_price, price_raw = _parse_price(price_text)
+
+        if price_min and numeric_price and numeric_price < price_min:
+            continue
+        if price_max and numeric_price and numeric_price > price_max:
+            continue
+
+        address_tag = article.find("h5", class_="listing-address")
+        location_text = address_tag.get_text(strip=True) if address_tag else ""
+
+        ads.append({
+            "title": title,
+            "price_raw": price_raw,
+            "price_numeric": numeric_price,
+            "location": location_text,
+            "ad_url": ad_url,
+            "time_stamp": "",
+        })
+
+    if ads:
+        return ads
+
+    # Legacy layout: plain anchor links
     for a_tag in soup.find_all("a", href=re.compile(r"/sale/property_details-\d+\.html")):
         href = a_tag.get("href", "")
         ad_url = urljoin(BASE_URL, href)
+        if ad_url in seen_urls:
+            continue
+        seen_urls.add(ad_url)
 
         title_tag = a_tag.find(["h4", "h5"])
         title = title_tag.get_text(strip=True) if title_tag else ""
@@ -169,7 +224,6 @@ def _parse_listing_cards(html, price_min, price_max):
             "price_numeric": numeric_price,
             "location": location_text,
             "ad_url": ad_url,
-            "slug": re.search(r"property_details-(\d+)", href).group(1) if re.search(r"property_details-(\d+)", href) else "",
             "time_stamp": "",
         })
 
@@ -226,32 +280,43 @@ def get_ad_details(ad_url, request_delay=1.5):
     html = _fetch_html(ad_url)
     soup = BeautifulSoup(html, "lxml")
 
-    # Description
+    # Title
+    h1 = soup.find("h1")
+    title = h1.get_text(strip=True) if h1 else ""
+
+    # Description: div#Property_Details contains the description p
     desc = ""
-    for section in soup.find_all(["section", "div"]):
-        h = section.find(["h2", "h3"])
-        if h and "property details" in h.get_text(strip=True).lower():
-            p = section.find("p")
-            if p:
-                desc = p.get_text(strip=True)
-            break
+    prop_details_div = soup.find("div", id="Property_Details")
+    if prop_details_div:
+        p = prop_details_div.find("p")
+        if p:
+            desc = p.get_text(separator=" ", strip=True)
 
-    # Specs from <dl><dt>/<dd> pairs
+    # Specs from div.overview — each item is div.overview-item with div.label and div.value
     spec_map = {}
-    for dl in soup.find_all("dl"):
-        dts = dl.find_all("dt")
-        dds = dl.find_all("dd")
-        for dt, dd in zip(dts, dds):
-            spec_map[dt.get_text(strip=True).lower()] = dd.get_text(strip=True)
+    overview_div = soup.find("div", class_="overview")
+    if overview_div:
+        for item in overview_div.find_all("div", class_="overview-item"):
+            label = item.find("div", class_="label")
+            value = item.find("div", class_="value")
+            if label and value:
+                spec_map[label.get_text(strip=True).lower()] = value.get_text(strip=True)
 
-    # Posted date
+    # Address: class="address" (first one is the listing address)
+    address = ""
+    addr_tag = soup.find(class_="address")
+    if addr_tag:
+        # Strip trailing "[View on large map]" link text
+        address = re.sub(r"\[.*?\]", "", addr_tag.get_text(strip=True)).strip()
+
+    # Posted date: "Posted/Edited: Today" / "Posted/Edited: 3 days ago"
     posted_raw = ""
     for tag in soup.find_all(string=re.compile(r"Posted", re.I)):
-        posted_raw = tag.strip()
-        break
+        t = tag.strip()
+        if "Posted" in t and len(t) < 60:
+            posted_raw = t
+            break
 
-    # Floor area → house_size, land_size
-    floor_area = spec_map.get("floor area", "")
     bedrooms = (
         spec_map.get("bedrooms", "")
         or spec_map.get("units/rooms", "")
@@ -262,10 +327,11 @@ def get_ad_details(ad_url, request_delay=1.5):
         or spec_map.get("bathrooms/wcs", "")
         or spec_map.get("no. of bathrooms", "")
     )
-    land_size = spec_map.get("land size", "") or spec_map.get("land extent", "")
-    address = spec_map.get("address", "")
+    land_size = spec_map.get("area of land", "") or spec_map.get("land size", "") or spec_map.get("land extent", "")
+    floor_area = spec_map.get("floor area", "") or spec_map.get("house size", "")
 
     return {
+        "title": title,
         "description": desc,
         "bedrooms": bedrooms,
         "bathrooms": bathrooms,

@@ -36,6 +36,11 @@ def extract_location_name(url):
     if "district" in qs:
         return qs["district"][0].replace("-", " ").replace("_", " ").title()
 
+    # /sale/property/in-{city} URL pattern
+    match = re.search(r"/in-([^/?]+)", parsed.path)
+    if match:
+        return match.group(1).replace("-", " ").replace("_", " ").title()
+
     return "CeylonProperty"
 
 
@@ -122,28 +127,33 @@ def _parse_posted_date(text):
 
 
 def _parse_listing_cards(html, price_min, price_max):
-    """Parse property-card divs from a search results page."""
+    """Parse rp-item cards from a search results page (/sale/property/in-{city} layout)."""
     soup = BeautifulSoup(html, "lxml")
     ads = []
+    seen_urls = set()
 
-    for card in soup.find_all("div", class_="property-card"):
-        a_tag = card.find("a", href=re.compile(r"/property/"))
+    for card in soup.find_all("div", class_="rp-item"):
+        # URL: first <a href="/property/..."> or full URL
+        a_tag = card.find("a", href=re.compile(r"/property/\d+"))
         if not a_tag:
             continue
-
         href = a_tag.get("href", "")
         ad_url = urljoin(BASE_URL, href) if href.startswith("/") else href
+        if ad_url in seen_urls:
+            continue
+        seen_urls.add(ad_url)
 
-        title_tag = a_tag.find("h5") or a_tag.find("h4")
-        title = title_tag.get_text(strip=True) if title_tag else ""
+        # Title: h5 > a inside rp-info
+        rp_info = card.find("div", class_="rp-info")
+        title = ""
+        if rp_info:
+            h5 = rp_info.find("h5")
+            if h5:
+                title = h5.get_text(strip=True)
 
-        # Price: last <p> in card (not inside the <a> title link)
-        price_text = ""
-        for p in card.find_all("p"):
-            txt = p.get_text(strip=True)
-            if txt and any(c.isdigit() for c in txt):
-                price_text = txt
-
+        # Price: a.rp-price
+        price_tag = card.find("a", class_="rp-price")
+        price_text = price_tag.get_text(strip=True) if price_tag else ""
         numeric_price, price_raw = _parse_price(price_text)
 
         if price_min and numeric_price and numeric_price < price_min:
@@ -151,13 +161,12 @@ def _parse_listing_cards(html, price_min, price_max):
         if price_max and numeric_price and numeric_price > price_max:
             continue
 
-        # Location: first <p> that doesn't look like a price
+        # Location text: first <p> inside rp-info (has map-marker icon + city name)
         location_text = ""
-        for p in card.find_all("p"):
-            txt = p.get_text(strip=True)
-            if txt and not any(c.isdigit() for c in txt):
-                location_text = txt
-                break
+        if rp_info:
+            p = rp_info.find("p")
+            if p:
+                location_text = p.get_text(strip=True)
 
         ads.append({
             "title": title,
@@ -227,40 +236,20 @@ def get_ad_details(ad_url, request_delay=1.5):
     html = _fetch_html(ad_url)
     soup = BeautifulSoup(html, "lxml")
 
-    # Title (h3 on detail page)
-    title = ""
-    h3 = soup.find("h3")
-    if h3:
-        title = h3.get_text(strip=True)
-
-    # Address / location text
-    address = ""
-    for p in soup.find_all("p"):
-        txt = p.get_text(strip=True)
-        if "," in txt and len(txt) < 100 and not any(kw in txt.lower() for kw in ("posted", "lkr", "million")):
-            address = txt
-            break
-
-    # Specs: look for img alt tags (bedroom/bathroom/landArea/floorAreaSq) followed by sibling h5
-    bedrooms = bathrooms = land_size = house_size = ""
-
-    for div in soup.find_all("div"):
-        img = div.find("img")
-        if not img:
-            continue
-        alt = (img.get("alt") or img.get("src") or "").lower()
-        h5 = div.find("h5")
-        val = h5.get_text(strip=True) if h5 else ""
-        if not val:
-            continue
-        if "bedroom" in alt:
-            bedrooms = val
-        elif "bathroom" in alt:
-            bathrooms = val
-        elif "landarea" in alt or "land" in alt:
-            land_size = val
-        elif "floorareasq" in alt or "floor" in alt:
-            house_size = val
+    # Specs: div.box_property contains label + value, e.g. "Bedrooms3", "Land Area8.5Perches"
+    bedrooms = bathrooms = land_size = house_size = address = ""
+    for box in soup.find_all("div", class_="box_property"):
+        txt = box.get_text(strip=True)
+        if txt.lower().startswith("bedrooms"):
+            bedrooms = txt[len("Bedrooms"):].strip()
+        elif txt.lower().startswith("bathrooms"):
+            bathrooms = txt[len("Bathrooms"):].strip()
+        elif txt.lower().startswith("floor area"):
+            house_size = txt[len("Floor Area"):].strip()
+        elif txt.lower().startswith("land area"):
+            land_size = txt[len("Land Area"):].strip()
+        elif txt.lower().startswith("address"):
+            address = txt[len("Address"):].strip()
 
     # Description
     description = ""
@@ -269,9 +258,9 @@ def get_ad_details(ad_url, request_delay=1.5):
         p = desc_div.find("p")
         description = p.get_text(strip=True) if p else desc_div.get_text(strip=True)
 
-    # Posted date
+    # Posted date: "Posted / edited: 7 months ago"
     posted_date = ""
-    for tag in soup.find_all(string=re.compile(r"posted", re.I)):
+    for tag in soup.find_all(string=re.compile(r"Posted\s*/\s*edited", re.I)):
         posted_date = _parse_posted_date(tag.strip())
         if posted_date:
             break
