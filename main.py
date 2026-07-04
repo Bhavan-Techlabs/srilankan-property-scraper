@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ikman.lk Property Scraper
-Scrapes house-for-sale ads from ikman.lk, detects duplicates,
-and writes structured data to Google Sheets.
+Sri Lankan House Sales Scraper
+Scrapes property listings from ikman.lk and lankapropertyweb.com,
+detects duplicates, and writes structured data to Excel and/or Google Sheets.
 """
 
 import argparse
@@ -16,17 +16,16 @@ warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
 
 import yaml
 
-from scraper import get_listings, get_ad_details, extract_location_name
+import scraper_factory as factory
 from data_processor import build_row, row_to_list
 from duplicate_detector import DuplicateDetector
-from sheets import get_spreadsheet, get_or_create_worksheet, get_existing_data, append_rows, clear_worksheet
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("ikman_scraper")
+logger = logging.getLogger("property_scraper")
 
 
 def load_config(config_path):
@@ -34,25 +33,57 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def process_location(url, config, spreadsheet):
-    """Scrape a single location URL and write results to its worksheet."""
-    location_name = extract_location_name(url)
+def _get_output_backends(config, args):
+    """Return initialized (excel_writer, spreadsheet) based on output_mode config."""
+    mode = config.get("output_mode", "excel").lower()
+    use_excel = mode in ("excel", "both")
+    use_sheets = mode in ("sheets", "both")
+
+    excel_mod = None
+    spreadsheet = None
+
+    if use_excel:
+        import excel_writer
+        excel_mod = excel_writer
+
+    if use_sheets:
+        from sheets import get_spreadsheet
+        spreadsheet_id = config.get("spreadsheet_id", "")
+        if not spreadsheet_id or spreadsheet_id == "YOUR_SPREADSHEET_ID_HERE":
+            logger.error("output_mode includes 'sheets' but no valid spreadsheet_id in config")
+            sys.exit(1)
+        credentials_path = config.get("credentials_path", "credentials.json")
+        spreadsheet = get_spreadsheet(credentials_path, spreadsheet_id)
+
+    return excel_mod, spreadsheet
+
+
+def process_location(url, config, excel_mod, spreadsheet):
+    """Scrape a single location URL and write results to configured output(s)."""
+    location_name = factory.extract_location_name(url)
     logger.info("=" * 60)
     logger.info("Processing location: %s", location_name)
     logger.info("URL: %s", url)
     logger.info("=" * 60)
 
-    worksheet = get_or_create_worksheet(spreadsheet, location_name)
+    # Load existing data for duplicate detection (prefer Excel when available)
+    existing_data = []
+    if excel_mod:
+        from excel_writer import get_existing_data, get_output_path
+        existing_data = get_existing_data(get_output_path(), location_name)
+    elif spreadsheet:
+        from sheets import get_existing_data as sheets_get_existing, get_or_create_worksheet
+        ws = get_or_create_worksheet(spreadsheet, location_name)
+        existing_data = sheets_get_existing(ws)
 
-    existing_data = get_existing_data(worksheet)
-    logger.info("Found %d existing entries in sheet '%s'", len(existing_data), location_name)
+    logger.info("Found %d existing entries for '%s'", len(existing_data), location_name)
 
     threshold = config.get("similarity_threshold", 0.9)
     detector = DuplicateDetector(threshold=threshold)
     detector.load_existing(existing_data)
 
     logger.info("Fetching listing pages...")
-    listings = get_listings(url, config)
+    listings = factory.get_listings(url, config)
     logger.info("Found %d ads in listings", len(listings))
 
     request_delay = config.get("request_delay", 1.5)
@@ -68,14 +99,13 @@ def process_location(url, config, spreadsheet):
         logger.info("[%d/%d] Fetching details: %s", i, len(listings), listing.get("title", "")[:60])
 
         try:
-            details = get_ad_details(ad_url, request_delay=request_delay)
+            details = factory.get_ad_details(ad_url, request_delay=request_delay)
         except Exception as e:
             logger.error("Failed to fetch ad details for %s: %s", ad_url, e)
             errors += 1
             continue
 
         description = details.get("description", "")
-
         is_dup, match_type, matching_url = detector.check(ad_url, description)
 
         if is_dup:
@@ -88,7 +118,12 @@ def process_location(url, config, spreadsheet):
         new_rows.append(row_to_list(row))
 
     if new_rows:
-        append_rows(worksheet, new_rows)
+        if excel_mod:
+            excel_mod.append_rows(location_name, new_rows)
+        if spreadsheet:
+            from sheets import get_or_create_worksheet, append_rows as sheets_append
+            ws = get_or_create_worksheet(spreadsheet, location_name)
+            sheets_append(ws, new_rows)
 
     logger.info(
         "Location '%s' complete: %d new rows, %d duplicates, %d errors",
@@ -98,45 +133,42 @@ def process_location(url, config, spreadsheet):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ikman.lk Property Scraper")
+    parser = argparse.ArgumentParser(description="Sri Lankan House Sales Scraper")
     parser.add_argument(
         "--config", default="config.yaml",
         help="Path to configuration file (default: config.yaml)",
     )
     parser.add_argument(
         "--clean", action="store_true",
-        help="Clear all existing data from sheets before scraping",
+        help="Clear all existing data before scraping",
     )
     args = parser.parse_args()
 
     config = load_config(args.config)
-
-    spreadsheet_id = config.get("spreadsheet_id", "")
-    if not spreadsheet_id or spreadsheet_id == "YOUR_SPREADSHEET_ID_HERE":
-        logger.error("Please set a valid 'spreadsheet_id' in %s", args.config)
-        sys.exit(1)
-
-    credentials_path = config.get("credentials_path", "credentials.json")
     urls = config.get("urls", [])
 
     if not urls:
         logger.error("No URLs configured in %s", args.config)
         sys.exit(1)
 
-    logger.info("Starting ikman.lk scraper with %d location(s)", len(urls))
-
-    spreadsheet = get_spreadsheet(credentials_path, spreadsheet_id)
+    excel_mod, spreadsheet = _get_output_backends(config, args)
 
     if args.clean:
         logger.info("Cleaning all sheets before scraping...")
         for url in urls:
-            location_name = extract_location_name(url)
-            try:
-                ws = spreadsheet.worksheet(location_name)
-                clear_worksheet(ws)
-                logger.info("Cleared sheet: %s", location_name)
-            except Exception:
-                pass
+            location_name = factory.extract_location_name(url)
+            if excel_mod:
+                excel_mod.clear_sheet(location_name)
+            if spreadsheet:
+                from sheets import get_or_create_worksheet, clear_worksheet
+                try:
+                    ws = spreadsheet.worksheet(location_name)
+                    clear_worksheet(ws)
+                except Exception:
+                    pass
+
+    mode = config.get("output_mode", "excel")
+    logger.info("Starting scraper — output_mode=%s, %d location(s)", mode, len(urls))
 
     total_new = 0
     total_dups = 0
@@ -144,7 +176,7 @@ def main():
 
     for url in urls:
         try:
-            new, dups, errs = process_location(url, config, spreadsheet)
+            new, dups, errs = process_location(url, config, excel_mod, spreadsheet)
             total_new += new
             total_dups += dups
             total_errors += errs
@@ -157,6 +189,8 @@ def main():
     logger.info("Total rows written: %d", total_new)
     logger.info("Total duplicates found: %d", total_dups)
     logger.info("Total errors: %d", total_errors)
+    if excel_mod:
+        logger.info("Excel output: %s", excel_mod.get_output_path())
     logger.info("=" * 60)
 
 

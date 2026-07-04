@@ -2,8 +2,8 @@
 credentials.json
 *.json.bak
 
-# Config with real values
-config.yaml
+# Generated output
+output/
 
 # Python
 __pycache__/

@@ -1,9 +1,9 @@
-name: Scrape ikman.lk
+name: Scrape Srilankan House Sales
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Every hour
-  workflow_dispatch:        # Allow manual trigger from GitHub UI
+    - cron: '0 */12 * * *'  # Every 12 hours
+  workflow_dispatch:          # Allow manual trigger from GitHub UI
 
 jobs:
   scrape:
@@ -26,17 +26,23 @@ jobs:
       - name: Write credentials
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: printenv GOOGLE_CREDENTIALS > credentials.json
-
-      - name: Write config
-        env:
-          CONFIG_YAML: ${{ secrets.CONFIG_YAML }}
-        run: printenv CONFIG_YAML > config.yaml
+        run: |
+          if [ -n "$GOOGLE_CREDENTIALS" ]; then
+            printenv GOOGLE_CREDENTIALS > credentials.json
+          fi
 
       - name: Run scraper
         run: python main.py
 
+      - name: Upload Excel output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: srilanka-house-sales
+          path: output/*.xlsx
+          retention-days: 30
+
       - name: Cleanup secrets
         if: always()
         run: |
-          rm -f credentials.json config.yaml
+          rm -f credentials.json
