@@ -1,59 +1,69 @@
 # Sri Lanka House Sales Scraper
 
-A Python web scraper that extracts house-for-sale listings from multiple Sri Lankan property sites ([ikman.lk](https://ikman.lk/), [lankapropertyweb.com](https://lankapropertyweb.com)) and writes structured data to Excel (.xlsx) and/or Google Sheets. Supports multiple locations, price filtering, pagination, and intelligent duplicate detection.
+A Python web scraper that extracts house-for-sale listings from multiple Sri Lankan property sites — [ikman.lk](https://ikman.lk/), [lankapropertyweb.com](https://lankapropertyweb.com/), and [ceylonproperty.lk](https://ceylonproperty.lk/) — and writes structured data to Excel (.xlsx) and/or Google Sheets. Supports multiple locations, price filtering, pagination, duplicate detection, and value scoring.
+
+**Repository:** https://github.com/Bhavan-Techlabs/srilankan-property-scraper
+
+---
 
 ## Features
 
-- **Multi-location scraping** -- configure multiple ikman.lk URLs, each gets its own sheet tab (e.g., Maharagama, Boralesgamuwa)
-- **Full ad details** -- visits each individual ad page to extract description, bedrooms, bathrooms, land size, house size, address, and more
-- **Price filtering** -- filter ads by min/max price range, configurable globally or via URL parameters
-- **Age cutoff** -- only scrape ads posted within the last N days (default: 14)
-- **Smart pagination** -- handles promoted/featured/bumped ads correctly without stopping pagination early
-- **Duplicate detection** -- skips ads already in the sheet by URL match or 90%+ description text similarity (catches reposted ads with new URLs)
-- **Google Sheets output** -- auto-creates sheet tabs, formats headers, sorts by posted date, and keeps rows compact
-- **Clean mode** -- option to clear all sheets and start fresh
-- **GitHub Actions support** -- automate scraping on a schedule (e.g., every hour) with zero infrastructure
+- **Multi-site scraping** — ikman.lk, lankapropertyweb.com, and ceylonproperty.lk supported out of the box
+- **Multi-location** — configure any number of URLs; each location gets its own sheet tab
+- **Full ad details** — visits each individual ad page to extract description, bedrooms, bathrooms, land size, house size, address, and more
+- **Source tracking** — each row records which website the listing came from
+- **Price filtering** — filter ads by min/max price range, globally or via URL parameters
+- **Age cutoff** — only scrape ads posted within the last N days (ikman.lk)
+- **Smart pagination** — handles promoted/featured/bumped ads correctly without stopping early
+- **Duplicate detection** — skips ads already in the sheet by exact URL match or 90%+ description similarity (catches reposted ads with new URLs)
+- **Value scoring** — Overview tab ranks all listings by space-per-rupee score across all locations and sources
+- **Excel output** — one tab per location with auto-formatting, column widths, and clickable hyperlinks; uploaded as a GitHub Actions artifact
+- **Google Sheets output** — auto-creates tabs, formats headers, sorts by posted date
+- **Clean mode** — option to clear all sheets and start fresh
+- **GitHub Actions** — runs every 12 hours on a cron schedule; Excel file available as a downloadable artifact (retained 30 days)
 
 ## How It Works
 
-ikman.lk embeds structured JSON data in each page via `window.initialData`. The scraper extracts this JSON directly instead of parsing HTML, making it fast and reliable.
+```
+Config → per-location loop:
+  factory dispatch (ikman / lankapropertyweb / ceylonproperty)
+  → fetch listing pages → filter by price/age
+  → fetch ad detail pages → deduplicate
+  → build rows → append to Excel tab and/or Google Sheets tab
+  → rebuild Overview tab with value scores
+```
 
-```
-Listing Pages → JSON extraction → Price/age filtering
-    ↓
-Individual Ad Pages → Detailed property data
-    ↓
-Duplicate Detection → URL match + description similarity (difflib)
-    ↓
-Google Sheets → One tab per location, sorted by date
-```
+ikman.lk listings are extracted from the embedded `window.initialData` JSON on each page. lankapropertyweb.com and ceylonproperty.lk are parsed from server-rendered HTML via BeautifulSoup.
 
 ## Data Columns
 
 | Column | Description |
 |---|---|
 | Title | Ad title |
-| Location | Location name |
+| Location | Location name (derived from the URL) |
 | Bedrooms | Number of bedrooms |
 | Bathrooms | Number of bathrooms |
-| Land Size | Land size in perches |
-| House Size | House size in sqft |
-| Price | Display price (e.g., Rs 35,000,000) |
+| Land Size (Perches) | Land area in perches |
+| House Size (SqFt) | Built area in square feet |
+| Price (LKR) | Price in Sri Lankan rupees |
 | Address | Property address |
-| Description | Full ad description (clipped in sheet, visible on click) |
-| URL | Link to the ad on ikman.lk |
+| Description | Full ad description |
+| URL | Clickable link to the original ad |
+| Source | Website domain the listing came from |
 | Posted | Approximate date the ad was posted |
 | Date Scraped | When the scraper collected this data |
-| Status | For your own tracking |
-| Notes | For your own notes |
+| Status | For your own tracking (preserved across runs) |
+| Notes | For your own notes (preserved across runs) |
+
+The **Overview** tab is auto-rebuilt after every run and ranks all listings across all locations by a value score (space per rupee).
 
 ## Setup
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/randikabanura/ikman-scraper.git
-cd ikman-scraper
+git clone https://github.com/Bhavan-Techlabs/srilankan-property-scraper.git
+cd srilankan-property-scraper
 ```
 
 ### 2. Install dependencies
@@ -62,78 +72,61 @@ cd ikman-scraper
 pip install -r requirements.txt
 ```
 
-### 3. Set up Google Sheets API
+### 3. Configure
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select an existing one)
-3. Enable the **Google Sheets API** and **Google Drive API**
-4. Go to **APIs & Services > Credentials**
-5. Click **Create Credentials > Service account**
-6. Give it a name, click through the steps
-7. On the service account page, go to the **Keys** tab
-8. Click **Add Key > Create new key > JSON** -- this downloads the credentials file
-9. Save it as `credentials.json` in the project root
+Edit `config.yaml` with your desired URLs, price range, and output mode.
 
-### 4. Create and share a Google Sheet
+```yaml
+output_mode: "excel"   # "excel" | "sheets" | "both"
 
-1. Create a new Google Sheet
-2. Click **Share** and add the service account email (found in your `credentials.json` as `client_email`, looks like `name@project.iam.gserviceaccount.com`) as an **Editor**
-3. Copy the spreadsheet ID from the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+urls:
+  - "https://ikman.lk/en/ads/colombo/houses-for-sale"
+  - "https://ceylonproperty.lk/sale/property/in-colombo?toAmount=30000000"
+  - "https://www.lankapropertyweb.com/sale/index.php?search=1&location=Western_Colombo&property-type=House"
 
-### 5. Configure
+price_filter:
+  min: 5000000
+  max: 30000000
 
-```bash
-cp config.example.yaml config.yaml
+max_age_days: 15
+max_pages: 20
 ```
 
-Edit `config.yaml` with your spreadsheet ID, desired URLs, and price range.
+### 4. (Optional) Google Sheets output
+
+Only needed when `output_mode` is `"sheets"` or `"both"`:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/), create a project, and enable the **Google Sheets API** and **Google Drive API**
+2. Create a **Service Account** and download its JSON key as `credentials.json` in the project root
+3. Share your Google Sheet with the service account's `client_email` as an **Editor**
+4. Add the spreadsheet ID to `config.yaml` under `spreadsheet_id`
 
 ## Usage
 
-### Standard run (incremental)
-
 ```bash
+# Incremental run — appends new listings, preserves existing data
 python main.py
-```
 
-Scrapes new ads and appends them to the sheet. Existing data is preserved; duplicates are skipped.
-
-### Clean run (fresh start)
-
-```bash
+# Clear all sheets then scrape fresh
 python main.py --clean
+
+# Use a custom config file
+python main.py --config path/to/config.yaml
 ```
 
-Clears all sheet data before scraping.
+## GitHub Actions
 
-### Custom config file
+The included `.github/workflows/scrape.yml` runs every 12 hours (`0 */12 * * *`) and on manual dispatch. It:
 
-```bash
-python main.py --config my_config.yaml
-```
-
-## Automated Scraping with GitHub Actions
-
-This project includes a GitHub Actions workflow that can run the scraper automatically on a schedule -- no server required.
-
-### How it works
-
-The included `.github/workflows/scrape.yml` workflow runs the scraper every 24 hours using a cron schedule. It can also be triggered manually from the **Actions** tab in your GitHub repository.
+1. Writes `credentials.json` from the `GOOGLE_CREDENTIALS` secret (skipped if not set)
+2. Runs the scraper
+3. Uploads `output/*.xlsx` as a downloadable artifact named `srilanka-house-sales` (retained 30 days)
 
 ### Setup
 
-1. Fork or push this repository to GitHub (public repos get unlimited free Actions minutes)
-2. Add two **repository secrets** under **Settings > Secrets and variables > Actions**:
-   - `GOOGLE_CREDENTIALS` -- the full contents of your `credentials.json` file
-   - `CONFIG_YAML` -- the full contents of your `config.yaml` file
-3. That's it -- the workflow will run automatically every 24 hours
-
-You can also set the secrets via the CLI:
-
-```bash
-gh secret set GOOGLE_CREDENTIALS < credentials.json
-gh secret set CONFIG_YAML < config.yaml
-```
+1. Push the repository to GitHub
+2. Add secrets under **Settings > Secrets and variables > Actions**:
+   - `GOOGLE_CREDENTIALS` — full contents of `credentials.json` (only if using Sheets output)
 
 ### Manual trigger
 
@@ -143,66 +136,47 @@ gh workflow run scrape.yml
 
 Or click **Run workflow** from the Actions tab on GitHub.
 
-### Adjusting the schedule
-
-Edit the cron expression in `.github/workflows/scrape.yml`:
-
-```yaml
-on:
-  schedule:
-    - cron: '0 0 * * *'    # Every 24 hours (midnight UTC)
-    # - cron: '0 */6 * * *'  # Every 6 hours
-    # - cron: '0 8 * * *'    # Daily at 8am UTC
-```
-
-## Configuration
-
-See `config.example.yaml` for all options:
-
-```yaml
-spreadsheet_id: "YOUR_SPREADSHEET_ID"
-credentials_path: "credentials.json"
-
-urls:
-  - "https://ikman.lk/en/ads/maharagama/houses-for-sale"
-  - "https://ikman.lk/en/ads/boralesgamuwa/houses-for-sale"
-
-price_filter:
-  min: 15000000
-  max: 80000000
-
-similarity_threshold: 0.9
-request_delay: 1.5
-max_age_days: 14
-max_pages: 20
-```
-
-You can also add price filters directly to URLs:
-
-```yaml
-urls:
-  - "https://ikman.lk/en/ads/maharagama/houses-for-sale?money.price.minimum=20000000&money.price.maximum=50000000"
-```
-
 ## Project Structure
 
 ```
 ├── .github/workflows/
-│   └── scrape.yml          # GitHub Actions workflow (daily cron)
-├── main.py                 # CLI entry point
-├── scraper.py              # Page fetching, JSON extraction, pagination
-├── data_processor.py       # Data normalization and row building
-├── duplicate_detector.py   # URL + description similarity matching
-├── sheets.py               # Google Sheets read/write/format
-├── config.example.yaml     # Sample configuration
-├── requirements.txt        # Python dependencies
-└── README.md
+│   └── scrape.yml              # GitHub Actions workflow (12-hour cron)
+├── main.py                     # CLI entry point
+├── scraper_factory.py          # Routes URLs to the correct scraper
+├── scraper_ikman.py            # ikman.lk scraper
+├── scraper_lankapropertyweb.py # lankapropertyweb.com scraper
+├── scraper_ceylonproperty.py   # ceylonproperty.lk scraper
+├── data_processor.py           # Data normalization, row building, value scoring
+├── duplicate_detector.py       # URL + description similarity matching
+├── excel_writer.py             # Excel output with formatting and Overview tab
+├── sheets.py                   # Google Sheets read/write/format
+├── config.yaml                 # Active configuration
+├── config.example.yaml         # Sample configuration
+└── requirements.txt            # Python dependencies
 ```
+
+## Configuration Reference
+
+| Key | Description | Default |
+|---|---|---|
+| `output_mode` | `"excel"` / `"sheets"` / `"both"` | `"excel"` |
+| `spreadsheet_id` | Google Sheets document ID | — |
+| `credentials_path` | Path to service account JSON | `credentials.json` |
+| `urls` | List of property search URLs | — |
+| `price_filter.min` / `.max` | Price bounds in LKR | — |
+| `max_age_days` | Skip ads older than N days (ikman only) | `14` |
+| `max_pages` | Pagination limit per location | `20` |
+| `similarity_threshold` | Duplicate detection sensitivity (0–1) | `0.9` |
+| `request_delay` | Seconds between HTTP requests | `1.5` |
+
+## Credits
+
+This project is a fork of [ikman-scraper](https://github.com/randikabanura/ikman-scraper) by [@randikabanura](https://github.com/randikabanura), originally built as a single-site ikman.lk scraper. It has since been substantially extended with multi-site support, Excel output, value scoring, GitHub Actions artifact upload, and more.
 
 ## Disclaimer
 
-This project is for educational and personal use only. Please respect ikman.lk's terms of service and use reasonable request delays.
+This project is for educational and personal use only. Please respect each website's terms of service and use reasonable request delays.
 
 ## License
 
-See [LICENSE](LICENSE) © [randikabanura](https://github.com/randikabanura/)
+See [LICENSE](LICENSE)
