@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Sri Lankan House Sales Scraper
-Scrapes property listings from ikman.lk, lankapropertyweb.com, ceylonproperty.lk,
-house.lk, and lankaland.lk, detects duplicates, and writes structured data to
-Excel and/or Google Sheets.
+Sri Lankan House Scraper
+Scrapes house-for-sale and house-for-rent listings from ikman.lk,
+lankapropertyweb.com, ceylonproperty.lk, house.lk, and lankaland.lk, detects
+duplicates, and writes structured data to Excel and/or Google Sheets. Sale
+and rent listings for the same city are kept in separate sheets/tabs.
 """
 
 import argparse
@@ -62,8 +63,10 @@ def _get_output_backends(config, args):
 def process_location(url, config, excel_mod, spreadsheet):
     """Scrape a single location URL and write results to configured output(s)."""
     location_name = factory.extract_location_name(url)
+    listing_type = factory.detect_listing_type(url)
+    sheet_name = location_name if listing_type == "sale" else f"{location_name} (Rent)"
     logger.info("=" * 60)
-    logger.info("Processing location: %s", location_name)
+    logger.info("Processing location: %s [%s]", location_name, listing_type)
     logger.info("URL: %s", url)
     logger.info("=" * 60)
 
@@ -71,20 +74,26 @@ def process_location(url, config, excel_mod, spreadsheet):
     existing_data = []
     if excel_mod:
         from excel_writer import get_existing_data, get_output_path
-        existing_data = get_existing_data(get_output_path(), location_name)
+        existing_data = get_existing_data(get_output_path(), sheet_name)
     elif spreadsheet:
         from sheets import get_existing_data as sheets_get_existing, get_or_create_worksheet
-        ws = get_or_create_worksheet(spreadsheet, location_name)
+        ws = get_or_create_worksheet(spreadsheet, sheet_name)
         existing_data = sheets_get_existing(ws)
 
-    logger.info("Found %d existing entries for '%s'", len(existing_data), location_name)
+    logger.info("Found %d existing entries for '%s'", len(existing_data), sheet_name)
 
     threshold = config.get("similarity_threshold", 0.9)
     detector = DuplicateDetector(threshold=threshold)
     detector.load_existing(existing_data)
 
     logger.info("Fetching listing pages...")
-    listings = factory.get_listings(url, config)
+    # Rentals and sales operate on entirely different price scales (monthly rent
+    # vs. total purchase price), so each uses its own price_filter from config.
+    scrape_config = config
+    if listing_type == "rent":
+        scrape_config = dict(config)
+        scrape_config["price_filter"] = config.get("rent_price_filter")
+    listings = factory.get_listings(url, scrape_config)
     logger.info("Found %d ads in listings", len(listings))
 
     request_delay = config.get("request_delay", 1.5)
@@ -120,15 +129,15 @@ def process_location(url, config, excel_mod, spreadsheet):
 
     if new_rows:
         if excel_mod:
-            excel_mod.append_rows(location_name, new_rows)
+            excel_mod.append_rows(sheet_name, new_rows)
         if spreadsheet:
             from sheets import get_or_create_worksheet, append_rows as sheets_append
-            ws = get_or_create_worksheet(spreadsheet, location_name)
+            ws = get_or_create_worksheet(spreadsheet, sheet_name)
             sheets_append(ws, new_rows)
 
     logger.info(
         "Location '%s' complete: %d new rows, %d duplicates, %d errors",
-        location_name, len(new_rows), duplicates_found, errors,
+        sheet_name, len(new_rows), duplicates_found, errors,
     )
     return len(new_rows), duplicates_found, errors
 
@@ -158,12 +167,14 @@ def main():
         logger.info("Cleaning all sheets before scraping...")
         for url in urls:
             location_name = factory.extract_location_name(url)
+            listing_type = factory.detect_listing_type(url)
+            sheet_name = location_name if listing_type == "sale" else f"{location_name} (Rent)"
             if excel_mod:
-                excel_mod.clear_sheet(location_name)
+                excel_mod.clear_sheet(sheet_name)
             if spreadsheet:
                 from sheets import get_or_create_worksheet, clear_worksheet
                 try:
-                    ws = spreadsheet.worksheet(location_name)
+                    ws = spreadsheet.worksheet(sheet_name)
                     clear_worksheet(ws)
                 except Exception:
                     pass

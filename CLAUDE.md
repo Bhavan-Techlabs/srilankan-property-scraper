@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Does
 
-Sri Lankan House Sales Scraper is a Python web scraper that extracts house-for-sale listings from multiple Sri Lankan property sites (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, lankaland.lk) and writes structured property data to Excel (.xlsx) and/or Google Sheets. It runs every 12 hours via GitHub Actions, which uploads the Excel file as a downloadable artifact.
+Sri Lankan House Scraper is a Python web scraper that extracts house-for-sale and house-for-rent listings from multiple Sri Lankan property sites (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, lankaland.lk) and writes structured property data to Excel (.xlsx) and/or Google Sheets. It runs every 12 hours via GitHub Actions, which uploads the Excel file as a downloadable artifact.
 
 ## Setup
 
@@ -35,16 +35,16 @@ The scraper is a linear pipeline over location URLs defined in config:
 
 ```
 Config → output backend(s) init → per-location loop:
-  factory dispatch → fetch listing pages → filter by price/age
-  → fetch ad detail pages → deduplicate → build rows
-  → append to Excel sheet tab and/or Google Sheets tab → sort & format
-  → rebuild Overview tab with value scores
+  factory dispatch → detect sale vs. rent from the URL → fetch listing pages
+  → filter by price (sale or rent price_filter)/age → fetch ad detail pages
+  → deduplicate → build rows → append to "City" or "City (Rent)" sheet tab
+  and/or Google Sheets tab → sort & format → rebuild both Overview tabs
 ```
 
 **Modules:**
 
 - `main.py` — CLI entry point; `process_location(url, config, excel_mod, spreadsheet)` drives the per-location loop
-- `scraper_factory.py` — factory that dispatches `get_listings`, `get_ad_details`, `extract_location_name` to the right scraper based on URL domain
+- `scraper_factory.py` — factory that dispatches `get_listings`, `get_ad_details`, `extract_location_name` to the right scraper based on URL domain; `detect_listing_type(url)` returns `"sale"` or `"rent"` based on the URL shape
 - `scraper_ikman.py` — ikman.lk scraper; HTTP fetching; extracts embedded `window.initialData` JSON; handles pagination and promoted-ad filtering
 - `scraper_lankapropertyweb.py` — lankapropertyweb.com scraper; parses HTML with BeautifulSoup; handles pagination via URL query params
 - `scraper_ceylonproperty.py` — ceylonproperty.lk scraper; parses server-side rendered HTML with BeautifulSoup; handles pagination via URL query params
@@ -52,7 +52,7 @@ Config → output backend(s) init → per-location loop:
 - `scraper_lankaland.py` — lankaland.lk scraper; parses server-side rendered HTML; search filtered via `?category=house&status=sale&city=...` query params, pagination via `/search-results/page/N/?...`; posted date is not available on this site (always blank)
 - `data_processor.py` — normalizes scraped data into typed flat dicts matching `COLUMNS`; `compute_value_score` scores listings by price/land/house/beds/baths
 - `duplicate_detector.py` — `DuplicateDetector` class checks exact URL match first, then falls back to `difflib.SequenceMatcher` description similarity (threshold configurable, default 0.9)
-- `excel_writer.py` — writes/appends rows to `output/srilanka_house_sales_YYYY-MM-DD.xlsx`; one sheet tab per location; auto-column widths; typed cell storage; the **Description** column is written but hidden (kept for cross-run duplicate detection, not meant to be read); rebuilds an **Overview** tab after each write with value-scored listings (including Address) sorted by score
+- `excel_writer.py` — writes/appends rows to `output/srilanka_house_sales_YYYY-MM-DD.xlsx`; one sheet tab per location (per sale/rent split, see below); auto-column widths; typed cell storage; the **Description** column is written but hidden (kept for cross-run duplicate detection, not meant to be read); rebuilds the **Overview** and **Overview (Rent)** tabs after each write with value-scored listings (including Address) sorted by score
 - `sheets.py` — Google Sheets API via service account; auto-creates tabs per location; auto-sorts by Posted date; auto-formats headers and row height
 
 ## Key Behaviors to Know
@@ -66,13 +66,15 @@ Config → output backend(s) init → per-location loop:
 
 **Pagination cutoff (ikman)**: Stops paginating when a page has no organic (non-promoted) ads newer than `max_age_days`.
 
-**Price filtering**: Applied at config level (`price_filter.min`/`price_filter.max`) unless the URL already contains price query parameters.
+**Sale vs. rent detection**: `scraper_factory.detect_listing_type(url)` inspects the URL — a `rent`/`rental` path segment (ikman, lankapropertyweb, ceylonproperty, house.lk) or a `status=rent` query param (lankaland) marks it as `"rent"`; everything else defaults to `"sale"`. `main.py` uses this to pick the right price filter and sheet name per URL — no per-scraper changes needed to add rent support for a site.
 
-**Duplicate detection**: Catches both exact URL matches and description similarity matches (cross-batch against existing data and intra-batch).
+**Price filtering**: Sale URLs use `price_filter.min`/`price_filter.max`; rent URLs use the separate `rent_price_filter.min`/`rent_price_filter.max` (monthly rent is a completely different scale to a total purchase price). Applied at config level unless the URL already contains price query parameters.
 
-**Sheet layout**: Each location gets its own worksheet tab named after the location. Status and Notes columns are user-editable and preserved across incremental runs. The Description column is hidden by default (still present in the file for duplicate detection, not intended for manual review). An **Overview** tab is auto-rebuilt after every write with all listings ranked by value score, and includes each listing's Address so the best-value result can be identified without opening its location tab.
+**Duplicate detection**: Catches both exact URL matches and description similarity matches (cross-batch against existing data and intra-batch). Sale and rent entries never dedupe against each other — each has its own sheet and its own existing-data lookup.
 
-**Value score**: `compute_value_score` in `data_processor.py` combines price, land size (perches), house size (sqft), bedrooms, and bathrooms into a composite score used to rank listings in the Overview tab. Address is not part of the numeric score (it isn't a size/price signal) but is surfaced alongside the score in the Overview tab so a listing can actually be located.
+**Sheet layout**: Each location gets its own worksheet tab named after the location for sale listings (e.g. `Piliyandala`), and a second tab with ` (Rent)` appended for rentals (e.g. `Piliyandala (Rent)`). The `Location` cell value itself stays the plain city name in both — only the sheet/tab name carries the sale/rent distinction. Status and Notes columns are user-editable and preserved across incremental runs. The Description column is hidden by default (still present in the file for duplicate detection, not intended for manual review). **Overview** (sale) and **Overview (Rent)** tabs are auto-rebuilt after every write, each ranking only its own sheet type by value score, and each includes Address so the best-value result can be identified without opening its location tab.
+
+**Value score**: `compute_value_score` in `data_processor.py` combines price, land size (perches), house size (sqft), bedrooms, and bathrooms into a composite score. It's dimensionally identical for sale and rent (space per rupee spent), but the two are never ranked together — sale price and monthly rent aren't comparable numbers, hence the separate Overview tabs. Address is not part of the numeric score (it isn't a size/price signal) but is surfaced alongside the score so a listing can actually be located.
 
 **Public API of `excel_writer`**: `get_output_path()` (public alias for `_output_path`) and `get_existing_data(path, sheet_name)` are the two functions imported by `main.py`.
 
@@ -95,8 +97,9 @@ GitHub: https://github.com/Bhavan-Techlabs/srilankan-property-scraper
 - `output_mode` — `"excel"` | `"sheets"` | `"both"` (default: `"excel"`)
 - `spreadsheet_id` — Google Sheets document ID (only needed for Sheets output)
 - `credentials_path` — path to service account JSON (default: `credentials.json`)
-- `urls` — list of property search URLs (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, or lankaland.lk)
-- `price_filter.min` / `price_filter.max` — price filter in LKR
+- `urls` — list of property search URLs (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, or lankaland.lk); sale and rent URLs are mixed in the same list, each URL's shape tells the scraper which one it is (see "Sale vs. rent detection" above)
+- `price_filter.min` / `price_filter.max` — price filter in LKR, for sale URLs only
+- `rent_price_filter.min` / `rent_price_filter.max` — price filter in LKR/month, for rent URLs only
 - `max_age_days` — skip ads older than this (ikman.lk only)
 - `max_pages` — pagination limit per location
 - `similarity_threshold` — duplicate detection sensitivity (0–1, default 0.9)

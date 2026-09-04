@@ -2,7 +2,8 @@
 Factory that dispatches scraping calls to the right scraper based on URL domain.
 To add a new scraper, import it and add an entry to SCRAPERS mapping its domain to the module.
 """
-from urllib.parse import urlparse
+import re
+from urllib.parse import urlparse, parse_qs
 
 import scraper_ikman as ikman_scraper
 import scraper_lankapropertyweb as lpw_scraper
@@ -38,3 +39,19 @@ def get_ad_details(ad_url, request_delay=1.5):
 
 def extract_location_name(url):
     return _resolve(url).extract_location_name(url)
+
+
+def detect_listing_type(url):
+    """Return 'rent' or 'sale' based on the URL shape.
+
+    Every supported site marks rentals in one of two ways: a 'rent'/'rental'
+    path segment (ikman, lankapropertyweb, ceylonproperty, house.lk) or a
+    status=rent query param (lankaland). Defaults to 'sale'.
+    """
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    if qs.get("status", [""])[0].lower() == "rent":
+        return "rent"
+    if re.search(r"rent(al)?", parsed.path, re.IGNORECASE):
+        return "rent"
+    return "sale"

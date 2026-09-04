@@ -237,21 +237,48 @@ def _value_insight(score, price, land, house, beds, baths):
     return space_desc
 
 
+_SALE_OVERVIEW_NAME = "Overview"
+_RENT_OVERVIEW_NAME = "Overview (Rent)"
+_OVERVIEW_NAMES = (_SALE_OVERVIEW_NAME, _RENT_OVERVIEW_NAME)
+
+
 def _rebuild_overview(wb):
-    """Rebuild the Overview sheet from all location sheets in the workbook."""
-    OVERVIEW_NAME = "Overview"
+    """Rebuild the sale and rental Overview tabs from their respective location sheets.
 
-    # Remove old overview so we rebuild clean
-    if OVERVIEW_NAME in wb.sheetnames:
-        del wb[OVERVIEW_NAME]
+    Sale and rent prices live on completely different scales (total purchase
+    price vs. monthly rent), so they're ranked in separate tabs rather than
+    mixed into one value-score table.
+    """
+    location_sheets = [n for n in wb.sheetnames if n not in _OVERVIEW_NAMES]
+    sale_sheets = [n for n in location_sheets if not n.endswith(" (Rent)")]
+    rent_sheets = [n for n in location_sheets if n.endswith(" (Rent)")]
 
-    ws_ov = wb.create_sheet(title=OVERVIEW_NAME, index=0)
+    _build_overview_sheet(
+        wb, _SALE_OVERVIEW_NAME, 0, sale_sheets,
+        "Sri Lanka House Sales — Value Overview",
+        "Ranked by value score = (land sqft + built sqft + room bonus) ÷ price × 1M  |  "
+        "Higher score = more space per rupee",
+    )
+    _build_overview_sheet(
+        wb, _RENT_OVERVIEW_NAME, 1, rent_sheets,
+        "Sri Lanka House Rentals — Value Overview",
+        "Ranked by value score = (land sqft + built sqft + room bonus) ÷ monthly rent × 1M  |  "
+        "Higher score = more space per rupee of monthly rent",
+    )
+
+
+def _build_overview_sheet(wb, sheet_title, index, source_sheet_names, banner_text, subtitle_text):
+    """Build one ranked value-score tab from the given list of source location sheets."""
+    if sheet_title in wb.sheetnames:
+        del wb[sheet_title]
+
+    ws_ov = wb.create_sheet(title=sheet_title, index=index)
 
     # --- Title banner ---
     _ov_span = f"A1:{get_column_letter(len(_OV_COLUMNS))}1"
     ws_ov.merge_cells(_ov_span)
     banner = ws_ov["A1"]
-    banner.value = "Sri Lanka House Sales — Value Overview"
+    banner.value = banner_text
     banner.font  = Font(bold=True, color="FFFFFF", size=13)
     banner.fill  = PatternFill("solid", fgColor="1A3A4A")
     banner.alignment = _CENTER
@@ -260,10 +287,7 @@ def _rebuild_overview(wb):
     _ov_span2 = f"A2:{get_column_letter(len(_OV_COLUMNS))}2"
     ws_ov.merge_cells(_ov_span2)
     sub = ws_ov["A2"]
-    sub.value = (
-        "Ranked by value score = (land sqft + built sqft + room bonus) ÷ price × 1M  |  "
-        "Higher score = more space per rupee"
-    )
+    sub.value = subtitle_text
     sub.font  = Font(italic=True, color="555555", size=9)
     sub.fill  = PatternFill("solid", fgColor="EEF3F7")
     sub.alignment = _CENTER
@@ -282,11 +306,9 @@ def _rebuild_overview(wb):
     ws_ov.row_dimensions[header_row].height = 22
     ws_ov.freeze_panes = "A4"
 
-    # --- Collect scored rows from every location sheet ---
+    # --- Collect scored rows from the given source sheets ---
     scored = []
-    for sheet_name in wb.sheetnames:
-        if sheet_name == OVERVIEW_NAME:
-            continue
+    for sheet_name in source_sheet_names:
         ws_src = wb[sheet_name]
         src_rows_raw = list(ws_src.iter_rows(values_only=True))
         if len(src_rows_raw) <= 1:
@@ -438,4 +460,4 @@ def _rebuild_overview(wb):
         ws_ov.cell(row=gap_row + 2, column=1, value=f"Average score: {avg_score:.4f}")
         ws_ov.cell(row=gap_row + 3, column=1, value=f"Best value: {scored[0]['title'][:60]}")
 
-    logger.info("Overview tab rebuilt with %d scored listings", len(scored))
+    logger.info("'%s' tab rebuilt with %d scored listings", sheet_title, len(scored))
