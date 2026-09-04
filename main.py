@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Sri Lankan House Sales Scraper
-Scrapes property listings from ikman.lk and lankapropertyweb.com,
-detects duplicates, and writes structured data to Excel and/or Google Sheets.
+Scrapes property listings from ikman.lk, lankapropertyweb.com, ceylonproperty.lk,
+house.lk, and lankaland.lk, detects duplicates, and writes structured data to
+Excel and/or Google Sheets.
 """
 
 import argparse

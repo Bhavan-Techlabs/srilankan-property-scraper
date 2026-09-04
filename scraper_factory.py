@@ -7,12 +7,16 @@ from urllib.parse import urlparse
 import scraper_ikman as ikman_scraper
 import scraper_lankapropertyweb as lpw_scraper
 import scraper_ceylonproperty as cp_scraper
+import scraper_houselk as houselk_scraper
+import scraper_lankaland as lankaland_scraper
 
 # Maps a domain substring to its scraper module. Checked in order; ikman is the fallback.
 SCRAPERS = {
     "ikman.lk": ikman_scraper,
     "lankapropertyweb.com": lpw_scraper,
     "ceylonproperty.lk": cp_scraper,
+    "house.lk": houselk_scraper,
+    "lankaland.lk": lankaland_scraper,
 }
 
 

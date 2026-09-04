@@ -85,6 +85,7 @@ def _apply_column_formats(ws, col_names):
 
         # Width
         ws.column_dimensions[letter].width = _COL_WIDTHS.get(col_name, 14)
+        ws.column_dimensions[letter].hidden = (col_name == "Description")
 
         # Number formats & alignment for data rows (row 2 onward)
         for row_idx in range(2, ws.max_row + 1):
@@ -198,6 +199,7 @@ _OV_COLUMNS = [
     "Score",
     "Title",
     "Location",
+    "Address",
     "Source",
     "Price (LKR)",
     "Land Size (Perches)",
@@ -209,7 +211,7 @@ _OV_COLUMNS = [
 ]
 
 _OV_WIDTHS = {
-    "Rank": 6, "Score": 9, "Title": 40, "Location": 14, "Source": 22,
+    "Rank": 6, "Score": 9, "Title": 40, "Location": 14, "Address": 30, "Source": 22,
     "Price (LKR)": 18, "Land Size (Perches)": 18, "House Size (SqFt)": 16,
     "Bedrooms": 10, "Bathrooms": 10, "Value Insight": 55, "URL": 20,
 }
@@ -305,9 +307,10 @@ def _rebuild_overview(wb):
             house  = _get("House Size (SqFt)")
             beds   = _get("Bedrooms")
             baths  = _get("Bathrooms")
-            title  = _get("Title") or ""
-            loc    = _get("Location") or sheet_name
-            source = _get("Source") or ""
+            title   = _get("Title") or ""
+            loc     = _get("Location") or sheet_name
+            address = _get("Address") or ""
+            source  = _get("Source") or ""
 
             # Recover the real URL — may have been replaced with "View Listing" text
             url_idx = h.get("URL")
@@ -344,6 +347,7 @@ def _rebuild_overview(wb):
                 "score": score,
                 "title": title,
                 "location": loc,
+                "address": address,
                 "source": source,
                 "price": price_n,
                 "land": land_n,
@@ -363,6 +367,7 @@ def _rebuild_overview(wb):
             r["score"],
             r["title"],
             r["location"],
+            r["address"],
             r["source"],
             r["price"],
             r["land"],
