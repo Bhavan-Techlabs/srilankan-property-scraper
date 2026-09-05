@@ -1,0 +1,29 @@
+name: Scrape (self-hosted test)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: self-hosted-test
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Test problem sites reachability
+        run: |
+          echo "--- house.lk ---"
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://house.lk/sale/colombo/piliyandala/house/"
+          echo "--- lankapropertyweb.com ---"
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" "https://www.lankapropertyweb.com/sale/index.php?search=1&location=Western_Piliyandala&property-type=House&from_index=1&min=Any&max=30000000&price-option=price_total&searchbox=Piliyandala"
