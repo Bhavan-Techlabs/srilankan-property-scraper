@@ -6,7 +6,10 @@ on:
 jobs:
   scrape:
     runs-on: self-hosted-test
-    timeout-minutes: 30
+    timeout-minutes: 240
+    env:
+      RUNNER_TOOL_CACHE: /Users/bhavanloganathan/actions-runner-test/_toolcache
+      AGENT_TOOLSDIRECTORY: /Users/bhavanloganathan/actions-runner-test/_toolcache
 
     steps:
       - name: Checkout code
