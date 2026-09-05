@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Does
 
-Sri Lankan House Scraper is a Python web scraper that extracts house-for-sale and house-for-rent listings from multiple Sri Lankan property sites (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, lankaland.lk) and writes structured property data to Excel (.xlsx) and/or Google Sheets. It runs every 12 hours via GitHub Actions, which uploads the Excel file as a downloadable artifact.
+Sri Lankan House Scraper is a Python web scraper that extracts house-for-sale and house-for-rent listings from multiple Sri Lankan property sites (ikman.lk, lankapropertyweb.com, ceylonproperty.lk, house.lk, lankaland.lk) and writes structured property data to Excel (.xlsx) and/or Google Sheets. It runs every 24 hours via GitHub Actions, which uploads the Excel file as a downloadable artifact.
 
 ## Setup
 
@@ -80,13 +80,39 @@ Config → output backend(s) init → per-location loop:
 
 ## GitHub Actions
 
-`.github/workflows/scrape.yml` runs on a 12-hour cron (`0 */12 * * *`) and on manual dispatch. It:
+`.github/workflows/scrape.yml` runs on a 24-hour cron (`0 0 * * *`) and on manual dispatch, on a GitHub-hosted `ubuntu-latest` runner. It:
 1. Writes `credentials.json` from `GOOGLE_CREDENTIALS` secret (skipped if secret not set)
 2. Runs the scraper
 3. **Uploads `output/*.xlsx` as a downloadable artifact** named `srilanka-house-sales` (retained 30 days)
 4. Cleans up `credentials.json`
 
-The job timeout is 180 minutes.
+The job timeout is 240 minutes.
+
+**Known issue — house.lk and lankapropertyweb.com return HTTP 403 on the GitHub-hosted runner**: both sites sit behind Cloudflare, which blocks GitHub Actions' datacenter IP ranges outright (confirmed via `curl` — 200 from a residential IP, 403 from the runner on every attempt, including the first). It is not a scraper bug and no header/retry change fixes it. `main.py` already degrades gracefully — these two sites error out per-location while ikman.lk, ceylonproperty.lk, and lankaland.lk continue normally.
+
+`.github/workflows/scrape-selfhosted.yml` is a manually-triggered (`workflow_dispatch` only, never scheduled) workflow for running the full scrape from a residential IP, which sidesteps the Cloudflare block above. It targets the `self-hosted-local` runner label and calls the project's existing `venv/bin/python` directly (no dependency install step — it reuses whatever is already installed there). See "Self-hosted runner (local, manual)" below for how to start/stop/remove that runner.
+
+### Self-hosted runner (local, manual)
+
+A self-hosted GitHub Actions runner lives at `.actions-runner/` (gitignored, not committed) inside this repo, registered under the `self-hosted-local` label. It is **not** a persistent service — start it manually before triggering `scrape-selfhosted.yml`, then stop it when done.
+
+```bash
+# Start (from repo root) — blocks in the foreground; use nohup/background if needed
+cd .actions-runner && ./run.sh
+
+# Trigger the workflow once the runner shows "Listening for Jobs"
+gh workflow run scrape-selfhosted.yml --repo Bhavan-Techlabs/srilankan-property-scraper
+
+# Stop the runner listener
+pkill -f "actions-runner/bin/Runner.Listener"
+
+# Fully unregister the runner from GitHub (requires repo admin)
+TOKEN=$(gh api -X POST repos/Bhavan-Techlabs/srilankan-property-scraper/actions/runners/remove-token --jq .token)
+cd .actions-runner && ./config.sh remove --token "$TOKEN"
+
+# Remove the local runner files entirely (after unregistering)
+rm -rf .actions-runner
+```
 
 ## Repository
 
