@@ -16,6 +16,9 @@ build/
 venv/
 env/
 
+# Self-hosted GitHub Actions runner (local, manually invoked)
+.actions-runner/
+
 # IDE
 .idea/
 .vscode/
