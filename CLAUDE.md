@@ -94,24 +94,20 @@ The job timeout is 240 minutes.
 
 ### Self-hosted runner (local, manual)
 
-A self-hosted GitHub Actions runner lives at `.actions-runner/` (gitignored, not committed) inside this repo, registered under the `self-hosted-local` label. It is **not** a persistent service — start it manually before triggering `scrape-selfhosted.yml`, then stop it when done.
+A self-hosted GitHub Actions runner lives at `.actions-runner/` (gitignored, not committed) inside this repo, registered under the `self-hosted-local` label. It is **not** a persistent service — start it manually before triggering `scrape-selfhosted.yml`, then stop it when done. `scripts/runner-*.sh` wrap all of this:
 
 ```bash
-# Start (from repo root) — blocks in the foreground; use nohup/background if needed
-cd .actions-runner && ./run.sh
+# Start (from repo root) — blocks in the foreground
+scripts/runner-start.sh
 
-# Trigger the workflow once the runner shows "Listening for Jobs"
-gh workflow run scrape-selfhosted.yml --repo Bhavan-Techlabs/srilankan-property-scraper
+# In another terminal, once it shows "Listening for Jobs":
+scripts/runner-trigger.sh
 
-# Stop the runner listener
-pkill -f "actions-runner/bin/Runner.Listener"
+# Stop the listener
+scripts/runner-stop.sh
 
-# Fully unregister the runner from GitHub (requires repo admin)
-TOKEN=$(gh api -X POST repos/Bhavan-Techlabs/srilankan-property-scraper/actions/runners/remove-token --jq .token)
-cd .actions-runner && ./config.sh remove --token "$TOKEN"
-
-# Remove the local runner files entirely (after unregistering)
-rm -rf .actions-runner
+# Fully unregister from GitHub (requires repo admin); add --purge to also delete .actions-runner/
+scripts/runner-remove.sh [--purge]
 ```
 
 ## Repository

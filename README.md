@@ -151,16 +151,19 @@ Or click **Run workflow** from the Actions tab on GitHub.
 
 ```bash
 # 1. Start the runner listener (from repo root; blocks in the foreground)
-cd .actions-runner && ./run.sh
+scripts/runner-start.sh
 
 # 2. In another terminal, once it shows "Listening for Jobs":
-gh workflow run scrape-selfhosted.yml
+scripts/runner-trigger.sh
 
 # 3. When done, stop the listener:
-pkill -f "actions-runner/bin/Runner.Listener"
+scripts/runner-stop.sh
+
+# To fully unregister (and optionally delete .actions-runner/ with --purge):
+scripts/runner-remove.sh [--purge]
 ```
 
-The runner isn't set up by default — see `CLAUDE.md` for full registration/removal steps.
+The runner isn't set up by default — see `CLAUDE.md` for full registration steps.
 
 ## Project Structure
 
