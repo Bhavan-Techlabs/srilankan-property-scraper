@@ -42,7 +42,6 @@ _COL_WIDTHS = {
     "House Size (SqFt)":      16,
     "Price (LKR)":            18,
     "Address":                30,
-    "Description":            50,
     "URL":                    20,
     "Source":                 22,
     "Posted":                 12,
@@ -85,7 +84,6 @@ def _apply_column_formats(ws, col_names):
 
         # Width
         ws.column_dimensions[letter].width = _COL_WIDTHS.get(col_name, 14)
-        ws.column_dimensions[letter].hidden = (col_name == "Description")
 
         # Number formats & alignment for data rows (row 2 onward)
         for row_idx in range(2, ws.max_row + 1):
@@ -104,7 +102,7 @@ def _apply_column_formats(ws, col_names):
             elif col_name == "Price (LKR)":
                 cell.number_format = _FMT_CURRENCY
                 cell.alignment = _TOP
-            elif col_name in ("Description", "Notes"):
+            elif col_name == "Notes":
                 cell.alignment = _WRAP
             elif col_name == "URL":
                 cell.alignment = _TOP
@@ -146,11 +144,22 @@ def get_existing_data(path, sheet_name):
     if sheet_name not in wb.sheetnames:
         return []
     ws = wb[sheet_name]
-    rows = list(ws.iter_rows(values_only=True))
+    rows = list(ws.iter_rows(values_only=False))
     if len(rows) <= 1:
         return []
-    headers = rows[0]
-    return [dict(zip(headers, row)) for row in rows[1:]]
+    headers = [cell.value for cell in rows[0]]
+    url_idx = headers.index("URL") if "URL" in headers else None
+
+    result = []
+    for row in rows[1:]:
+        values = [cell.value for cell in row]
+        # URL cells display "View Listing" with the real URL stashed in the hyperlink
+        if url_idx is not None:
+            hyperlink = row[url_idx].hyperlink
+            if hyperlink and hyperlink.target:
+                values[url_idx] = hyperlink.target
+        result.append(dict(zip(headers, values)))
+    return result
 
 
 def append_rows(sheet_name, new_rows):

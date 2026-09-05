@@ -115,15 +115,15 @@ def process_location(url, config, excel_mod, spreadsheet):
             errors += 1
             continue
 
-        description = details.get("description", "")
-        is_dup, match_type, matching_url = detector.check(ad_url, description)
+        title = listing.get("title", "")
+        is_dup, match_type, matching_url = detector.check(ad_url, title)
 
         if is_dup:
             duplicates_found += 1
             logger.info("  -> Skipped duplicate (%s match with %s)", match_type, matching_url)
             continue
 
-        detector.add_entry(ad_url, description)
+        detector.add_entry(ad_url, title)
         row = build_row(listing, details, location_name)
         new_rows.append(row_to_list(row))
 

@@ -14,7 +14,6 @@ COLUMNS = [
     "House Size (SqFt)",
     "Price (LKR)",
     "Address",
-    "Description",
     "URL",
     "Source",
     "Posted",
@@ -158,7 +157,6 @@ def build_row(listing, details, location_name):
         "House Size (SqFt)": normalize_house_size(details.get("house_size")),
         "Price (LKR)": normalize_price(listing.get("price_numeric"), listing.get("price_raw", "")),
         "Address": details.get("address", ""),
-        "Description": details.get("description", ""),
         "URL": ad_url,
         "Source": _extract_domain(ad_url),
         "Posted": (
